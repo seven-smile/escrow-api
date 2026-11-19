@@ -57,10 +57,16 @@ class TradeFlowTests(TestCase):
 
     def test_only_buyer_can_mark_paid(self):
         trade = open_trade(self.ama, self.kofi, "USDT", Decimal("30"))
-        with self.assertRaises(TradeError):
-            mark_paid(trade, self.ama)
+        trade = mark_paid(trade, self.kofi)
         with self.assertRaises(TradeError):
             mark_paid(trade, self.yaw)
+
+    def test_buyer_cannot_release(self):
+            trade = open_trade(self.ama, self.kofi, "USDT", Decimal("30"))
+            with self.assertRaises(TradeError):
+                mark_paid(trade, self.ama)
+            with self.assertRaises(TradeError):
+                release_trade(trade, self.kofi)
 
     def test_double_release_is_blocked(self):
         trade = open_trade(self.ama, self.kofi, "USDT", Decimal("30"))
@@ -78,7 +84,6 @@ class TradeFlowTests(TestCase):
         self.assertEqual(trade.status, Trade.Status.RELEASED)
         self.assertEqual(self.wallet(self.kofi).available, Decimal("30"))
 
-    # YOUR TURN: write these two tests yourself.
     def test_seller_cannot_cancel_after_payment(self):
         trade = open_trade(self.ama, self.kofi, "USDT", Decimal("30"))
         trade = mark_paid(trade, self.kofi)
@@ -103,3 +108,13 @@ class TradeFlowTests(TestCase):
         self.assertEqual(events[1].to_status, Trade.Status.PAID)
         self.assertEqual(events[2].actor, self.ama)
         self.assertEqual(events[2].from_status, Trade.Status.PAID)
+
+    def test_support_decision_is_recorded(self):
+        trade = open_trade(self.ama, self.kofi, "USDT" ,Decimal("30"))
+        trade = mark_paid(trade, self.kofi)
+        trade = open_dispute(trade, self.kofi)
+        trade = release_trade(trade, self.support)
+
+        events = list(trade.events.order_by("pk"))
+        self.assertEqual(events[-1].actor, self.support)
+        self.assertEqual(events[-1].to_status, Trade.Status.RELEASED)

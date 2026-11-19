@@ -61,7 +61,7 @@ def open_trade(seller, buyer, currency, amount):
             currency=currency,
             amount=amount,
         )
-        _record(trade, seller, None)
+        _record(trade, buyer, "")
     return trade
 
 
