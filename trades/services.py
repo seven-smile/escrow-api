@@ -3,7 +3,7 @@ from django.db import transaction
 from wallets.models import Wallet
 from wallets.services import lock_funds, release_funds, unlock_funds
 
-from .models import Trade
+from .models import Trade, TradeEvent
 
 
 class TradeError(Exception):
@@ -41,6 +41,14 @@ def _check_allowed(trade, new_status, user):
 def _get_locked_trade(pk):
     return Trade.objects.select_for_update().get(pk=pk)
 
+def _record(trade, actor, from_status, note=""):
+    TradeEvent.objects.create(
+        trade=trade,
+        actor=actor,
+        from_status=from_status,
+        to_status=trade.status,
+        note=note,
+    )
 
 def open_trade(seller, buyer, currency, amount):
     with transaction.atomic():
@@ -53,6 +61,7 @@ def open_trade(seller, buyer, currency, amount):
             currency=currency,
             amount=amount,
         )
+        _record(trade, seller, None)
     return trade
 
 
@@ -60,8 +69,10 @@ def mark_paid(trade, user):
     with transaction.atomic():
         trade = _get_locked_trade(trade.pk)
         _check_allowed(trade, Trade.Status.PAID, user)
+        old_status = trade.status
         trade.status = Trade.Status.PAID
         trade.save()
+        _record(trade, user, old_status)
     return trade
 
 
@@ -69,8 +80,10 @@ def open_dispute(trade, user):
     with transaction.atomic():
         trade = _get_locked_trade(trade.pk)
         _check_allowed(trade, Trade.Status.DISPUTED, user)
+        old_status = trade.status
         trade.status = Trade.Status.DISPUTED
         trade.save()
+        _record(trade, user, old_status)
     return trade
 
 
@@ -80,8 +93,10 @@ def cancel_trade(trade, user):
         _check_allowed(trade, Trade.Status.CANCELLED, user)
         seller_wallet = Wallet.objects.get(user=trade.seller, currency=trade.currency)
         unlock_funds(seller_wallet, trade.amount)
+        old_status = trade.status
         trade.status = Trade.Status.CANCELLED
         trade.save()
+        _record(trade, user, old_status)
     return trade
 
 
@@ -92,6 +107,8 @@ def release_trade(trade, user):
         seller_wallet = Wallet.objects.get(user=trade.seller, currency=trade.currency)
         buyer_wallet = Wallet.objects.get(user=trade.buyer, currency=trade.currency)
         release_funds(seller_wallet, buyer_wallet, trade.amount)
+        old_status = trade.status
         trade.status = Trade.Status.RELEASED
         trade.save()
+        _record(trade, user, old_status)
     return trade

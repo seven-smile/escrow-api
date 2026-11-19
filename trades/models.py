@@ -47,3 +47,25 @@ class Trade(models.Model):
 
     def __str__(self):
         return f"Trade {self.pk}: {self.seller} sells {self.amount} {self.currency} to {self.buyer} ({self.status})"
+
+class TradeEvent(models.Model):
+    trade = models.ForeignKey(
+        Trade,
+        on_delete=models.PROTECT,
+        related_name="events",
+    )
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="trade_events",
+    )
+    from_status = models.CharField(
+        max_length=20, choices=Trade.Status.choices, blank=True
+    )
+    to_status = models.CharField(max_length=20, choices=Trade.Status.choices)
+    note = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Trade {self.trade_id}: {self.from_status or 'new'} -> {self.to_status} by {self.actor}"
+    

@@ -91,3 +91,15 @@ class TradeFlowTests(TestCase):
         self.assertEqual(trade.status, Trade.Status.CANCELLED)
         self.assertEqual(self.wallet(self.ama).available, Decimal("100"))
         self.assertEqual(self.wallet(self.ama).locked, Decimal("0"))
+
+    def test_every_move_is_recorded_with_its_actor(self):
+        trade = open_trade(self.ama, self.kofi, "USDT", Decimal("30"))
+        trade = mark_paid(trade, self.kofi)
+        trade = release_trade(trade, self.ama)
+        
+        events = list(trade.events.order_by("pk"))
+        self.assertEqual(len(events), 3)
+        self.assertEqual(events[0].actor, self.kofi)
+        self.assertEqual(events[1].to_status, Trade.Status.PAID)
+        self.assertEqual(events[2].actor, self.ama)
+        self.assertEqual(events[2].from_status, Trade.Status.PAID)
