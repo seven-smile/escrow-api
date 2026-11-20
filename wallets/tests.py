@@ -15,6 +15,7 @@ from wallets.services import (
     unlock_funds,
 )
 
+from rest_framework.test import APITestCase
 
 class WalletServiceTests(TestCase):
     def setUp(self):
@@ -79,3 +80,21 @@ class WalletServiceTests(TestCase):
         unlock_funds(self.ama_wallet, Decimal("10"))
         total = LedgerEntry.objects.aggregate(total=Sum("amount"))["total"]
         self.assertEqual(total, Decimal("100"))
+
+class WalletApiTests(APITestCase):
+    def setUp(self):
+        self.ama = User.objects.create_user("ama", password="test12345")
+        self.kofi = User.objects.create_user("kofi", password="test12345")
+        Wallet.objects.create(user=self.ama, currency="USDT")
+        Wallet.objects.create(user=self.kofi, currency="BTC")
+
+    def test_must_be_logged_in(self):
+        response = self.client.get("/api/wallets/")
+        self.assertEqual(response.status_code, 401)
+
+    def test_user_sees_only_their_own_wallets(self):
+        self.client.force_authenticate(user=self.ama)
+        response = self.client.get("/api/wallets/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]["currency"], "USDT")

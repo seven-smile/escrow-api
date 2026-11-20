@@ -1,3 +1,10 @@
-from django.shortcuts import render
+from rest_framework.generics import ListAPIView
 
-# Create your views here.
+from .serializers import WalletSerializer
+
+
+class MyWalletsView(ListAPIView):
+    serializer_class = WalletSerializer
+
+    def get_queryset(self):
+        return self.request.user.wallets.all()
