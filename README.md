@@ -20,13 +20,24 @@ Work in progress. I'm building it step by step, and this README will grow with t
 A trade can also be **cancelled** (the coins go back to the seller) or
 **disputed** (the coins stay locked until the dispute is settled).
 
-## What I'm building toward
+## Done so far
 
-- A ledger that records every money movement
-- Database rules that block negative balances
-- Row locks, so two trades can't spend the same coins
+- Wallets with separate available and locked balances
+- A ledger that records every coin movement, with reconciliation checks
+- Database rules that block negative balances and invalid trades
+- Row locks (`select_for_update`) so two requests can't spend the same coins
+- Ordered locking across two wallets to avoid deadlocks
+- A trade state machine: only allowed moves, only by allowed people
+- An audit log of every trade move and who made it
+- 20 tests, including double release and "coins are never created or destroyed"
+
+## Next
+
+- REST API with login
 - Idempotency keys, so a repeated request never pays twice
-- Tests that prove each of these works
+- A test that fires two requests at the same moment
+- Database indexes, with notes on why each one exists
+- Docker setup for the whole app, and GitHub Actions
 
 ## Tech
 
