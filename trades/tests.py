@@ -16,7 +16,7 @@ from trades.services import (
 from wallets.models import Wallet
 from wallets.services import deposit
 
-
+from rest_framework.test import APITestCase
 class TradeFlowTests(TestCase):
     def setUp(self):
         self.ama = User.objects.create_user("ama", password="test12345")
@@ -118,3 +118,49 @@ class TradeFlowTests(TestCase):
         events = list(trade.events.order_by("pk"))
         self.assertEqual(events[-1].actor, self.support)
         self.assertEqual(events[-1].to_status, Trade.Status.RELEASED)
+class TradeApiTests(APITestCase):
+    def setUp(self):
+        self.ama = User.objects.create_user("ama", password="test12345")
+        self.kofi = User.objects.create_user("kofi", password="test12345")
+        self.yaw = User.objects.create_user("yaw", password="test12345")
+        ama_wallet = Wallet.objects.create(user=self.ama, currency="USDT")
+        deposit(ama_wallet, Decimal("100"))
+        self.trade = open_trade(self.ama, self.kofi, "USDT", Decimal("30"))
+
+    def url(self, action):
+        return f"/api/trades/{self.trade.pk}/{action}/"
+
+    def test_buyer_can_mark_paid(self):
+        self.client.force_authenticate(user=self.kofi)
+        response = self.client.post(self.url("mark-paid"))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["status"], "paid")
+
+    def test_buyer_cannot_release_gets_403(self):
+        mark_paid(self.trade, self.kofi)
+        self.client.force_authenticate(user=self.kofi)
+        response = self.client.post(self.url("release"))
+        self.assertEqual(response.status_code, 403)
+
+    def test_release_before_payment_gets_409(self):
+        self.client.force_authenticate(user=self.ama)
+        response = self.client.post(self.url("release"))
+        self.assertEqual(response.status_code, 409)
+
+    def test_stranger_gets_404(self):
+        self.client.force_authenticate(user=self.yaw)
+        response = self.client.post(self.url("mark-paid"))
+        self.assertEqual(response.status_code, 404)
+
+    def test_my_trades_only_shows_my_trades(self):
+        self.client.force_authenticate(user=self.yaw)
+        response = self.client.get("/api/trades/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data), 0)
+
+    def test_seller_can_release_after_payment(self):
+        mark_paid(self.trade, self.kofi)
+        self.client.force_authenticate(user=self.ama)
+        response = self.client.post(self.url("release"))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["status"], "released")

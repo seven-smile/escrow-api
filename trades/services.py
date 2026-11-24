@@ -9,6 +9,11 @@ from .models import Trade, TradeEvent
 class TradeError(Exception):
     pass
 
+class InvalidMove(TradeError):
+    pass
+
+class NotAllowed(TradeError):
+    pass
 
 TRANSITIONS = {
     (Trade.Status.AWAITING_PAYMENT, Trade.Status.PAID): ["buyer"],
@@ -33,9 +38,9 @@ def _role(trade, user):
 def _check_allowed(trade, new_status, user):
     allowed_roles = TRANSITIONS.get((trade.status, new_status))
     if allowed_roles is None:
-        raise TradeError(f"A trade can't go from {trade.status} to {new_status}.")
+        raise InvalidMove(f"A trade can't go from {trade.status} to {new_status}.")
     if _role(trade, user) not in allowed_roles:
-        raise TradeError(f"You aren't allowed to move this trade to {new_status}.")
+        raise NotAllowed(f"You aren't allowed to move this trade to {new_status}.")
 
 
 def _get_locked_trade(pk):
