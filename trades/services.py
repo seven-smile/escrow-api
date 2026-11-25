@@ -3,7 +3,7 @@ from django.db import transaction
 from wallets.models import Wallet
 from wallets.services import lock_funds, release_funds, unlock_funds
 
-from .models import Trade, TradeEvent
+from .models import Offer, Trade, TradeEvent
 
 
 class TradeError(Exception):
@@ -55,7 +55,7 @@ def _record(trade, actor, from_status, note=""):
         note=note,
     )
 
-def open_trade(seller, buyer, currency, amount):
+def open_trade(seller, buyer, currency, amount, offer=None, price=None):
     with transaction.atomic():
         seller_wallet = Wallet.objects.get(user=seller, currency=currency)
         Wallet.objects.get_or_create(user=buyer, currency=currency)
@@ -65,10 +65,38 @@ def open_trade(seller, buyer, currency, amount):
             buyer=buyer,
             currency=currency,
             amount=amount,
+            offer=offer,
+            price=price,
         )
         _record(trade, buyer, "")
     return trade
 
+def open_trade_from_offer(offer, buyer, amount):
+    offer = Offer.objects.get(pk=offer.pk)
+
+    if not offer.is_active:
+        raise InvalidMove("This offer is paused.")
+    if buyer == offer.seller:
+        raise NotAllowed("You can't buy from your own offer.")
+    if amount < offer.min_amount or amount > offer.max_amount:
+        raise InvalidMove(
+            f"Amount must be between {offer.min_amount} and {offer.max_amount}."
+        )
+    if Trade.objects.filter(
+        buyer=buyer,
+        seller=offer.seller,
+        status=Trade.Status.AWAITING_PAYMENT,
+    ).exists():
+        raise InvalidMove("You already have an unpaid trade with this seller.")
+
+    return open_trade(
+        offer.seller,
+        buyer,
+        offer.currency,
+        amount,
+        offer=offer,
+        price=offer.price,
+    )
 
 def mark_paid(trade, user):
     with transaction.atomic():

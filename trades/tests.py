@@ -4,13 +4,16 @@ from django.contrib.auth.models import User
 from django.db import IntegrityError
 from django.test import TestCase
 
-from trades.models import Trade
+from trades.models import Offer, Trade
 from trades.services import (
+    InvalidMove,
+    NotAllowed,
     TradeError,
     cancel_trade,
     mark_paid,
     open_dispute,
     open_trade,
+    open_trade_from_offer,
     release_trade,
 )
 from wallets.models import Wallet
@@ -164,3 +167,50 @@ class TradeApiTests(APITestCase):
         response = self.client.post(self.url("release"))
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["status"], "released")
+
+class OfferTests(TestCase):
+    def setUp(self):
+        self.ama = User.objects.create_user("ama", password="test12345")
+        self.kofi = User.objects.create_user("kofi", password="test12345")
+        ama_wallet = Wallet.objects.create(user=self.ama, currency="USDT")
+        deposit(ama_wallet, Decimal("100"))
+        self.offer = Offer.objects.create(
+            seller=self.ama,
+            currency="USDT",
+            price=Decimal("15.00"),
+            min_amount=Decimal("10"),
+            max_amount=Decimal("50"),
+        )
+
+    def test_trade_from_offer_locks_coins_and_copies_price(self):
+        trade = open_trade_from_offer(self.offer, self.kofi, Decimal("20"))
+        self.assertEqual(trade.price, Decimal("15.00"))
+        self.assertEqual(trade.offer, self.offer)
+        wallet = Wallet.objects.get(user=self.ama, currency="USDT")
+        self.assertEqual(wallet.locked, Decimal("20"))
+
+    def test_cannot_take_more_than_max(self):
+        with self.assertRaises(InvalidMove):
+            open_trade_from_offer(self.offer, self.kofi, Decimal("60"))
+
+    def test_seller_cannot_buy_own_offer(self):
+        with self.assertRaises(NotAllowed):
+            open_trade_from_offer(self.offer, self.ama, Decimal("20"))
+
+    def test_paused_offer_refuses_trades(self):
+        self.offer.is_active = False
+        self.offer.save()
+        with self.assertRaises(InvalidMove):
+            open_trade_from_offer(self.offer, self.kofi, Decimal("20"))
+
+    def test_price_change_does_not_affect_open_trade(self):
+        trade = open_trade_from_offer(self.offer, self.kofi, Decimal("20"))
+        self.offer.price = Decimal("15.00")
+        self.offer.save()
+        trade = Trade.objects.get(pk=trade.pk)
+        self.assertEqual(trade.price, Decimal("15.00"))
+
+    def test_buyer_cannot_open_second_unpaid_trade_with_same_seller(self):
+        open_trade_from_offer(self.offer, self.kofi, Decimal("20"))
+        with self.assertRaises(InvalidMove):
+            open_trade_from_offer(self.offer, self.kofi, Decimal("20"))
